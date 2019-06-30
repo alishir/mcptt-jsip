@@ -13,9 +13,6 @@ fun main() {
 
     val sipFactory = SipFactory.getInstance()
     val sipStack = sipFactory.createSipStack(properties)
-    val headerFactory = sipFactory.createHeaderFactory()
-    val messageFactory = sipFactory.createMessageFactory()
-    val addressFactory = sipFactory.createAddressFactory()
 
     val udp = sipStack.createListeningPoint("127.0.0.1", 5060, "udp")
 
@@ -23,6 +20,6 @@ fun main() {
     val sipProviderUdp = sipStack.createSipProvider(udp)
 
     val users = mutableListOf<SipURI>()
-    val mcptt = Mcptt(users, sipProviderUdp, messageFactory, addressFactory, headerFactory)
+    val mcptt = Mcptt(users, sipFactory, sipProviderUdp)
     sipProviderUdp.addSipListener(mcptt)
 }

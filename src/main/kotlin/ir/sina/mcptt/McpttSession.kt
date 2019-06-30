@@ -4,4 +4,5 @@ import javax.sip.message.Request
 
 class McpttSession(val originatorRequest: Request) {
     var inviteCount = 0
+    var originatorSDP = ""
 }
