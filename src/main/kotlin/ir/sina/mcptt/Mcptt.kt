@@ -1,9 +1,11 @@
 package ir.sina.mcptt
 
+import gov.nist.javax.sdp.MediaDescriptionImpl
 import gov.nist.javax.sdp.parser.SDPAnnounceParser
 import gov.nist.javax.sip.DialogTimeoutEvent
 import gov.nist.javax.sip.SipListenerExt
 import gov.nist.javax.sip.message.SIPRequest
+import gov.nist.javax.sip.message.SIPResponse
 import org.apache.logging.log4j.LogManager
 import javax.sip.*
 import javax.sip.address.SipURI
@@ -121,31 +123,63 @@ class Mcptt(
         }
         if (responseEvent != null) {
             val dialog = responseEvent.clientTransaction.dialog
-            val ack = dialog.createAck(dialog.localSeqNumber)
-            dialog.sendAck(ack)
-            val mcpttSession = callIdToMcpttSession[dialog.callId]
-            if (mcpttSession != null) {
-                accept(mcpttSession)
-            } else {
-                logger.warn("Couldn't find MCPTT session for call-id")
+            if (dialog != null) {
+                val ack = dialog.createAck(dialog.localSeqNumber)
+                dialog.sendAck(ack)
+                val mcpttSession = callIdToMcpttSession[dialog.callId]
+                if (mcpttSession != null) {
+                    mcpttSession.inviteCount = mcpttSession.inviteCount - 1
+                    extractResponseSdp(responseEvent.response as SIPResponse, mcpttSession)
+                    if (mcpttSession.inviteCount == 0) {
+                        accept(mcpttSession)
+                    }
+                } else {
+                    logger.warn("Couldn't find MCPTT session for call-id")
+                }
+            }
+        }
+    }
+
+    private fun extractResponseSdp(
+        response: SIPResponse,
+        mcpttSession: McpttSession
+    ) {
+        response.multipartMimeContent.contents.forEach {
+            val subType = it.contentTypeHeader.contentSubType.toLowerCase()
+            if (subType == "sdp") {
+                logger.info("Response SDP content is:\n${it.content}")
+                val parser = SDPAnnounceParser(it.toString())
+                val sdp = parser.parse()
+                sdp.getMediaDescriptions(false).forEach { md ->
+                    when (md) {
+                        is MediaDescriptionImpl -> {
+                            if (md.mediaField.media.toLowerCase() == "audio") {
+                                val rtpAddr = sdp.connection.address + ":" + md.mediaField.port
+                                logger.info("Audio RTP address is: $rtpAddr")
+                                mcpttSession.addPeerRtp(rtpAddr)
+                            }
+                        }
+                        else -> {
+                            logger.error("Unknown type of media ...")
+                        }
+                    }
+                }
             }
         }
     }
 
     private fun accept(mcpttSession: McpttSession) {
-        mcpttSession.inviteCount = mcpttSession.inviteCount - 1
-        if (mcpttSession.inviteCount == 0) {
-            logger.info("OK received from all invited clients")
-            logger.info("Sending response to originator ...")
-            // Accept MCPTT request to call
-            val response = messageFactory.createResponse(200, mcpttSession.originatorRequest)
-            response.addHeader(contactHeader)
+        logger.info("OK received from all invited clients")
+        logger.info("Sending response to originator ...")
+        // Accept MCPTT request to call
+        val response = messageFactory.createResponse(200, mcpttSession.originatorRequest)
+        response.addHeader(contactHeader)
 
-            val parser = SDPAnnounceParser(mcpttSession.originatorSDP)
-            val sdp = parser.parse()
-            logger.info("SDP connectiona address is: ${sdp.connection.address}")
-            sipProvider.getNewServerTransaction(mcpttSession.originatorRequest).sendResponse(response)
-        }
+        val parser = SDPAnnounceParser(mcpttSession.originatorSDP)
+        val sdp = parser.parse()
+        logger.info("SDP connectiona address is: ${sdp.connection.address}")
+        logger.info("Peers RPTs: ${mcpttSession.peerRtps}")
+        sipProvider.getNewServerTransaction(mcpttSession.originatorRequest).sendResponse(response)
     }
 
     override fun processDialogTimeout(timeoutEvent: DialogTimeoutEvent?) {
