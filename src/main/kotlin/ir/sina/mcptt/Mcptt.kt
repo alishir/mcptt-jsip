@@ -171,15 +171,56 @@ class Mcptt(
     private fun accept(mcpttSession: McpttSession) {
         logger.info("OK received from all invited clients")
         logger.info("Sending response to originator ...")
-        // Accept MCPTT request to call
-        val response = messageFactory.createResponse(200, mcpttSession.originatorRequest)
-        response.addHeader(contactHeader)
 
         val parser = SDPAnnounceParser(mcpttSession.originatorSDP)
         val sdp = parser.parse()
-        logger.info("SDP connectiona address is: ${sdp.connection.address}")
+        // extract audio RTP port
+        sdp.getMediaDescriptions(false).forEach { md ->
+            when (md) {
+                is MediaDescriptionImpl -> {
+                    if (md.mediaField.media.toLowerCase() == "audio") {
+                        val origRtpAddr = sdp.connection.address + ":" + md.mediaField.port
+                        mcpttSession.origRtpAddr = origRtpAddr
+                        logger.info("Originator audio RTP address is: $origRtpAddr")
+                    }
+                }
+                else -> {
+                    logger.error("Unknown type of media ...")
+                }
+            }
+        }
+        // launch ffmpeg to restream received RTP to peers
+        startFFMPEG(mcpttSession)
         logger.info("Peers RPTs: ${mcpttSession.peerRtps}")
+
+        // Accept MCPTT request to call
+        val response = messageFactory.createResponse(200, mcpttSession.originatorRequest)
+        response.addHeader(contactHeader)
         sipProvider.getNewServerTransaction(mcpttSession.originatorRequest).sendResponse(response)
+    }
+
+    private fun startFFMPEG(mcpttSession: McpttSession) {
+        val cmd = mutableListOf<String>()
+        cmd.add("/usr/bin/ffmpeg")
+        cmd.add("-f")
+        cmd.add("rtp")
+        cmd.add("-i")
+        cmd.add("rtp://${mcpttSession.origRtpAddr}")
+        cmd.add("-c:a")
+        cmd.add("copy")
+        cmd.add("-f")
+        cmd.add("tee")
+        cmd.add("-map")
+        cmd.add("0:a")
+        var peersArg = ""
+        mcpttSession.peerRtps.forEach { rtp ->
+            peersArg += "[f=rtp]rtp://$rtp|"
+        }
+        cmd.add(peersArg)
+        val pb = ProcessBuilder(cmd)
+        val ps = pb.start()
+        mcpttSession.ffmpegProcess = ps
+        logger.info("FFMPEG process is alive: ${ps.isAlive}")
     }
 
     override fun processDialogTimeout(timeoutEvent: DialogTimeoutEvent?) {
