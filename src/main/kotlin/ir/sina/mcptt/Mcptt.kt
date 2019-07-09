@@ -34,6 +34,8 @@ class Mcptt(
     val fromHeader = headerFactory.createFromHeader(fromAddr, "mcptt-tag")
     val contactHeader = headerFactory.createContactHeader(fromAddr)
 
+    val sessions = mutableListOf<McpttSession>()
+
 
     override fun processIOException(exceptionEvent: IOExceptionEvent?) {
         TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
@@ -60,6 +62,7 @@ class Mcptt(
         val originatingUri = originatingContact.address.uri as SipURI
         val groupMembers = userList.filter { it != originatingUri }
         val mcpttSession = McpttSession(request)
+        sessions.add(mcpttSession)
 
         // extract sdp from request body
         request.multipartMimeContent.contents.forEach {
@@ -190,37 +193,16 @@ class Mcptt(
             }
         }
         // launch ffmpeg to restream received RTP to peers
-        startFFMPEG(mcpttSession)
-        logger.info("Peers RPTs: ${mcpttSession.peerRtps}")
+        mcpttSession.startFFMPEG()
+        logger.info("FFMPEG process started in new thread.")
 
         // Accept MCPTT request to call
         val response = messageFactory.createResponse(200, mcpttSession.originatorRequest)
-        response.addHeader(contactHeader)
-        sipProvider.getNewServerTransaction(mcpttSession.originatorRequest).sendResponse(response)
-    }
 
-    private fun startFFMPEG(mcpttSession: McpttSession) {
-        val cmd = mutableListOf<String>()
-        cmd.add("/usr/bin/ffmpeg")
-        cmd.add("-f")
-        cmd.add("rtp")
-        cmd.add("-i")
-        cmd.add("rtp://${mcpttSession.origRtpAddr}")
-        cmd.add("-c:a")
-        cmd.add("copy")
-        cmd.add("-f")
-        cmd.add("tee")
-        cmd.add("-map")
-        cmd.add("0:a")
-        var peersArg = ""
-        mcpttSession.peerRtps.forEach { rtp ->
-            peersArg += "[f=rtp]rtp://$rtp|"
-        }
-        cmd.add(peersArg)
-        val pb = ProcessBuilder(cmd)
-        val ps = pb.start()
-        mcpttSession.ffmpegProcess = ps
-        logger.info("FFMPEG process is alive: ${ps.isAlive}")
+        response.addHeader(contactHeader)
+        val cth = headerFactory.createContentTypeHeader("application", "sdp")
+        response.setContent(mcpttSession.originatorSDP, cth)
+        sipProvider.getNewServerTransaction(mcpttSession.originatorRequest).sendResponse(response)
     }
 
     override fun processDialogTimeout(timeoutEvent: DialogTimeoutEvent?) {

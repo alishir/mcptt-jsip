@@ -23,11 +23,11 @@ class MyStackLogger : StackLogger {
     }
 
     override fun isLoggingEnabled(): Boolean {
-        return true
+        return false
     }
 
     override fun isLoggingEnabled(p0: Int): Boolean {
-        return true
+        return false
     }
 
     override fun setStackProperties(p0: Properties?) {
