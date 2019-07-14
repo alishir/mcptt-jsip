@@ -7,6 +7,7 @@ import gov.nist.javax.sip.SipListenerExt
 import gov.nist.javax.sip.message.SIPRequest
 import gov.nist.javax.sip.message.SIPResponse
 import org.apache.logging.log4j.LogManager
+import java.util.*
 import javax.sip.*
 import javax.sip.address.SipURI
 import javax.sip.header.CallIdHeader
@@ -14,11 +15,13 @@ import javax.sip.header.ContactHeader
 import javax.sip.header.ContentTypeHeader
 import javax.sip.message.Request.INVITE
 import javax.sip.message.Request.REGISTER
+import kotlin.collections.HashMap
 
 class Mcptt(
     val userList: MutableCollection<SipURI>,
     sipFactory: SipFactory,
-    val sipProvider: SipProvider
+    val sipProvider: SipProvider,
+    properties: Properties
 
 ) :
     SipListenerExt {
@@ -35,6 +38,10 @@ class Mcptt(
     val contactHeader = headerFactory.createContactHeader(fromAddr)
 
     val sessions = mutableListOf<McpttSession>()
+
+    val scscf_ip = properties.getProperty("mcptt.scscf.ip", "127.0.0.1")
+    val scscf_port = properties.getProperty("mcptt.scscf.port", "5060").toInt()
+    val scscf_proto = properties.getProperty("mcptt.scscf.proto", "udp")
 
 
     override fun processIOException(exceptionEvent: IOExceptionEvent?) {
@@ -87,7 +94,7 @@ class Mcptt(
         val toHeader = headerFactory.createToHeader(toAddr, null)
         val callIdHeader = sipProvider.newCallId
         val cseqHeader = headerFactory.createCSeqHeader(1L, INVITE)
-        val viaHeader = headerFactory.createViaHeader("127.0.0.1", 5060, "udp", null)
+        val viaHeader = headerFactory.createViaHeader(scscf_ip, scscf_port, scscf_proto, null)
         val viaHeaders = listOf(viaHeader)
         val maxForward = headerFactory.createMaxForwardsHeader(70)
         val request = messageFactory.createRequest(
