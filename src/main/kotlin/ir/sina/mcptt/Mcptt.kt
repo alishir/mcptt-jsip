@@ -209,6 +209,7 @@ class Mcptt(
         response.addHeader(contactHeader)
         val cth = headerFactory.createContentTypeHeader("application", "sdp")
         sdp.connection.address = "192.168.1.21"
+        sdp.origin.address = "192.168.1.21"
         response.setContent(sdp.toString(), cth)
         sipProvider.getNewServerTransaction(mcpttSession.originatorRequest).sendResponse(response)
     }
