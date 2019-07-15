@@ -32,16 +32,19 @@ class Mcptt(
     val logger = LogManager.getLogger("MCPTT")
     val callIdToMcpttSession = HashMap<CallIdHeader, McpttSession>()
 
-    val fromUri = addressFactory.createSipURI("MCPTT-server", "127.0.0.1:5060")
+    val scscf_ip = properties.getProperty("mcptt.scscf.ip", "127.0.0.1")
+    val scscf_port = properties.getProperty("mcptt.scscf.port", "5060").toInt()
+    val scscf_proto = properties.getProperty("mcptt.scscf.proto", "udp")
+    val listen_address = properties.getProperty("mcptt.listen.address", "127.0.0.1")
+    val listen_port = properties.getProperty("mcptt.listen.port", "5060").toInt()
+
+    val fromUri = addressFactory.createSipURI("MCPTT-server", "$listen_address:$listen_port")
     val fromAddr = addressFactory.createAddress(fromUri)
     val fromHeader = headerFactory.createFromHeader(fromAddr, "mcptt-tag")
     val contactHeader = headerFactory.createContactHeader(fromAddr)
 
     val sessions = mutableListOf<McpttSession>()
 
-    val scscf_ip = properties.getProperty("mcptt.scscf.ip", "127.0.0.1")
-    val scscf_port = properties.getProperty("mcptt.scscf.port", "5060").toInt()
-    val scscf_proto = properties.getProperty("mcptt.scscf.proto", "udp")
 
 
     override fun processIOException(exceptionEvent: IOExceptionEvent?) {
@@ -208,8 +211,8 @@ class Mcptt(
 
         response.addHeader(contactHeader)
         val cth = headerFactory.createContentTypeHeader("application", "sdp")
-        sdp.connection.address = "192.168.1.21"
-        sdp.origin.address = "192.168.1.21"
+        sdp.connection.address = listen_address
+        sdp.origin.address = listen_address
         response.setContent(sdp.toString(), cth)
         sipProvider.getNewServerTransaction(mcpttSession.originatorRequest).sendResponse(response)
     }
